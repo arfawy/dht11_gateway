@@ -1,31 +1,39 @@
+from datetime import datetime
 from serial import Serial
 import database
 import time
 import sys
 import re
 
-# init
-db_name = "meteo"
-host = "localhost"
-username = "root"
-password = ""
+#####  INIT  #####
+db_name    = "meteoo"
+table_name = "dht"
+host       = "localhost"
+username   = "root"
+password   = ""
 serialport = 'COM3'
-frequence = 9600
-query = "CREATE TABLE dht (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, temperature INT NOT NULL, humidity INT NOT NULL, seconds VARCHAR(255) NOT NULL)"
-sql = "INSERT INTO dht(temperature, humidity, seconds) VALUES (%s, %s, %s)"
-
+frequence  = 9600
+query      = "CREATE TABLE " + table_name + " (id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, temperature INT NOT NULL, humidity INT NOT NULL, dtime DATETIME)"
+query_v    = "CREATE VIEW v_" + table_name + "s AS "
+query_v   += 'SELECT DISTINCT  HOUR(dtime) as temps, CONCAT(DAY(dtime), "-", MONTH(dtime), "-", YEAR(dtime)) as d_time, AVG(temperature) as temperature,  AVG(humidity) as humidity'
+query_v   += "FROM " + table_name + " GROUP BY temps, d_time"
+sql        = "INSERT INTO dht(temperature, humidity, dtime) VALUES (%s, %s, %s)"
+####         ####
 
 try:
     ########  DATABASE   #########
     connection = database.buildDB(db_name, host, username, password)
     cursor = database.getCursor(connection)
     cursor.execute("SHOW TABLES")
-    tables = []
+    dp = 0
     for table in cursor:
-        tables.append(table[0])
-    if len(tables) == 0:
+        if table[0] == table_name or table[0] == "v_" + table_name + "s":
+            dp = dp + 1
+    if dp != 2:
         cursor.execute(query)
         print("Table created...")
+        cursor.execute(query_v)
+        print("View created...")
 
     ######## Serial COM  #########
     port = Serial(serialport, frequence)
@@ -37,17 +45,15 @@ try:
         temperature = port.readline().decode('utf-8').split('\r\n')[0]    
         
         # Time
-        seconds = time.time()
-        result = time.localtime(seconds)
-        hh = result.tm_hour
-        mm = result.tm_min
+        now = datetime.now()
+        dtime = now.strftime('%Y-%m-%d %H:%M:%S')
         
         #Database insertion
-        val = (temperature, humidity, str(seconds))
+        val = (temperature, humidity, dtime)
         cursor.execute(sql, val)
         connection.commit()
         # print
-        print(hh, ":", mm)
+        print(now.strftime('%H:%M:%S'))
         print("Humidité: ", humidity, "%")
         print("Température: ", temperature, "C"); print()
 except KeyboardInterrupt:
@@ -58,4 +64,3 @@ except:
     erreur = re.sub(r"'>", r"", erreur)
     print("Erreur  : ", erreur)
     print("Message : ",sys.exc_info()[1])
-    
